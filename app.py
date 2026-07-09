@@ -213,7 +213,7 @@ with tab4:
             x, y = load_spectrum(file)
             
             if do_baseline:
-                z = backcor(x, y, 4, 0.01, 'atq')
+                z = backcor(x, y, 5, -2, 'atq')
                 y = y - z
             
             if use_manual:
