@@ -7,7 +7,7 @@ import io
 st.set_page_config(page_title="Crystallinity Calculator Pipeline", layout="wide")
 
 # --------------------------------------------------------------------------
-# Core Math Functions (From uploaded files)
+# Core Math Functions 
 # --------------------------------------------------------------------------
 def backcor(n, y, ord, s, fct):
     """Mazet background correction"""
@@ -151,32 +151,30 @@ with tab3:
         peak_amp = st.number_input("Amorphous Peak Position (ν_amp)", value=1680.0)
         pure_amp_file = st.file_uploader("Upload Pure Amorphous Reference (SCALED)", key="amp_ref")
     with col2:
-        peak_cry = st.number_input("Crystalline Peak Position (ν_cry)", value=1689.0)
+        # Corrected default to 1698
+        peak_cry = st.number_input("Crystalline Peak Position (ν_cry)", value=1698.0)
         pure_cry_file = st.file_uploader("Upload Pure Crystalline Reference", key="cry_ref")
 
     if pure_amp_file and pure_cry_file:
         xa, ya = load_spectrum(pure_amp_file)
         xc, yc = load_spectrum(pure_cry_file)
         
-        # Get absolute intensities of both peaks in both spectra
-        I_A_vamp = get_intensity(peak_amp, xa, ya) # e.g., I_A(1680)
-        I_A_vcry = get_intensity(peak_cry, xa, ya) # e.g., I_A(1689)
+        I_A_vamp = get_intensity(peak_amp, xa, ya) 
+        I_A_vcry = get_intensity(peak_cry, xa, ya) 
         
-        I_C_vamp = get_intensity(peak_amp, xc, yc) # e.g., I_C(1680)
-        I_C_vcry = get_intensity(peak_cry, xc, yc) # e.g., I_C(1689)
+        I_C_vamp = get_intensity(peak_amp, xc, yc) 
+        I_C_vcry = get_intensity(peak_cry, xc, yc) 
         
         if I_A_vamp == 0:
             st.error("Error: Amorphous intensity at ν_amp is zero.")
         else:
-            # Full derivation of the constants
             const_a = I_A_vcry / I_A_vamp
             const_b = 1.0 - (I_C_vamp / I_A_vamp)
             const_c = (I_C_vcry / I_A_vamp) - const_a
             
             st.success("Formula Constants Extracted!")
-            st.latex(rf"X_c = \frac{{r - {const_a:.3f}}}{{{const_b:.3f} \cdot r + {const_c:.3f}}}")
+            st.latex(rf"X_c = \frac{{r - {const_a:.4f}}}{{({const_b:.4f} \cdot r) + {const_c:.4f}}}")
             
-            # Save to session state so Tab 4 can use it
             st.session_state['formula'] = {
                 'v_amp': peak_amp,
                 'v_cry': peak_cry,
@@ -192,11 +190,14 @@ with tab4:
     if 'formula' not in st.session_state:
         st.warning("Please generate a formula in Tab 3 first, or manually enter the constants below.")
         man_v_amp = st.number_input("v_amp", value=1680.0)
-        man_v_cry = st.number_input("v_cry", value=1689.0)
-        man_const_a = st.number_input("Subtracted Constant (a)", value=0.307)
-        man_const_b = st.number_input("Denominator multiplier (b)", value=0.879)
-        man_const_c = st.number_input("Denominator addition (c)", value=2.222)
-        use_manual = st.checkbox("Use Manual Formula")
+        # Corrected default to 1698
+        man_v_cry = st.number_input("v_cry", value=1698.0)
+        
+        # Corrected defaults to your lab-derived constants
+        man_const_a = st.number_input("Subtracted Constant (a)", value=0.3125, format="%.4f")
+        man_const_b = st.number_input("Denominator multiplier (b)", value=0.9029, format="%.4f")
+        man_const_c = st.number_input("Denominator addition (c)", value=1.8215, format="%.4f")
+        use_manual = st.checkbox("Use Manual Formula", value=True)
     else:
         st.success(f"Using formula generated from Tab 3. (Peaks: {st.session_state['formula']['v_amp']}, {st.session_state['formula']['v_cry']})")
         use_manual = False
@@ -213,7 +214,7 @@ with tab4:
             x, y = load_spectrum(file)
             
             if do_baseline:
-                z = backcor(x, y, 5, -2, 'atq')
+                z = backcor(x, y, 4, 0.01, 'atq')
                 y = y - z
             
             if use_manual:
@@ -227,20 +228,22 @@ with tab4:
             
             r = i_cry / i_amp if i_amp != 0 else np.nan
             
+            # Explicit grouping added: ((b * r) + c)
             if use_manual:
-                xc = (r - man_const_a) / (man_const_b * r + man_const_c)
+                xc = (r - man_const_a) / ((man_const_b * r) + man_const_c)
             else:
                 a = st.session_state['formula']['a']
                 b = st.session_state['formula']['b']
                 c = st.session_state['formula']['c']
-                xc = (r - a) / (b * r + c)
+                xc = (r - a) / ((b * r) + c)
                 
             results.append({
                 "Filename": file.name,
                 f"I({v_amp})": i_amp,
                 f"I({v_cry})": i_cry,
                 "Ratio (r)": r,
-                "Crystallinity (Xc)": xc
+                "Crystallinity (Xc)": xc,
+                "Crystallinity (%)": xc * 100
             })
             
         df_results = pd.DataFrame(results)
