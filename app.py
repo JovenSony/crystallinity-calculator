@@ -144,43 +144,46 @@ with tab2:
 # --- TAB 3: DEFINE FORMULA ---
 with tab3:
     st.header("Crystallinity Formula Generation")
-    st.markdown("Define your pure references to generate the formula constants based on the literature derivation.")
+    st.markdown("Upload your pure references. **Note: They must be baseline corrected AND scaled relative to each other (via Tab 2) before uploading.**")
     
     col1, col2 = st.columns(2)
     with col1:
         peak_amp = st.number_input("Amorphous Peak Position (ν_amp)", value=1680.0)
-        pure_amp_file = st.file_uploader("Upload Pure Amorphous Reference (Baseline Corrected)", key="amp_ref")
+        pure_amp_file = st.file_uploader("Upload Pure Amorphous Reference (SCALED)", key="amp_ref")
     with col2:
-        peak_cry = st.number_input("Crystalline Peak Position (ν_cry)", value=1698.0)
-        pure_cry_file = st.file_uploader("Upload Pure Crystalline Reference (Baseline Corrected)", key="cry_ref")
+        peak_cry = st.number_input("Crystalline Peak Position (ν_cry)", value=1689.0)
+        pure_cry_file = st.file_uploader("Upload Pure Crystalline Reference", key="cry_ref")
 
     if pure_amp_file and pure_cry_file:
         xa, ya = load_spectrum(pure_amp_file)
         xc, yc = load_spectrum(pure_cry_file)
         
-        I_amp_v1 = get_intensity(peak_amp, xa, ya)
-        I_amp_v2 = get_intensity(peak_cry, xa, ya)
+        # Get absolute intensities of both peaks in both spectra
+        I_A_vamp = get_intensity(peak_amp, xa, ya) # e.g., I_A(1680)
+        I_A_vcry = get_intensity(peak_cry, xa, ya) # e.g., I_A(1689)
         
-        I_cry_v1 = get_intensity(peak_amp, xc, yc)
-        I_cry_v2 = get_intensity(peak_cry, xc, yc)
+        I_C_vamp = get_intensity(peak_amp, xc, yc) # e.g., I_C(1680)
+        I_C_vcry = get_intensity(peak_cry, xc, yc) # e.g., I_C(1689)
         
-        # Calculate constants based on derivation
-        # K_amp ratio = I_amp(v2) / I_amp(v1)
-        K_amp_ratio = I_amp_v2 / I_amp_v1 if I_amp_v1 != 0 else 0
-        # K_cry ratio = I_cry(v1) / I_cry(v2) -> matching image derivation for inversion
-        K_cry_ratio = I_cry_v1 / I_cry_v2 if I_cry_v2 != 0 else 0
-        
-        st.success("Formula Constants Extracted!")
-        st.write(f"**Amorphous Ratio ($K_a^{{\\nu_2}}/K_a^{{\\nu_1}}$):** {K_amp_ratio:.4f}")
-        st.write(f"**Crystalline Ratio ($K_c^{{\\nu_1}}/K_c^{{\\nu_2}}$):** {K_cry_ratio:.4f}")
-        
-        # Save to session state so Tab 4 can use it
-        st.session_state['formula'] = {
-            'v_amp': peak_amp,
-            'v_cry': peak_cry,
-            'k_amp_r': K_amp_ratio,
-            'k_cry_r': K_cry_ratio
-        }
+        if I_A_vamp == 0:
+            st.error("Error: Amorphous intensity at ν_amp is zero.")
+        else:
+            # Full derivation of the constants
+            const_a = I_A_vcry / I_A_vamp
+            const_b = 1.0 - (I_C_vamp / I_A_vamp)
+            const_c = (I_C_vcry / I_A_vamp) - const_a
+            
+            st.success("Formula Constants Extracted!")
+            st.latex(rf"X_c = \frac{{r - {const_a:.3f}}}{{{const_b:.3f} \cdot r + {const_c:.3f}}}")
+            
+            # Save to session state so Tab 4 can use it
+            st.session_state['formula'] = {
+                'v_amp': peak_amp,
+                'v_cry': peak_cry,
+                'a': const_a,
+                'b': const_b,
+                'c': const_c
+            }
 
 # --- TAB 4: BULK CALCULATE ---
 with tab4:
@@ -190,9 +193,9 @@ with tab4:
         st.warning("Please generate a formula in Tab 3 first, or manually enter the constants below.")
         man_v_amp = st.number_input("v_amp", value=1680.0)
         man_v_cry = st.number_input("v_cry", value=1689.0)
-        man_const_a = st.number_input("Subtracted Constant (e.g., 0.307)", value=0.307)
-        man_const_b = st.number_input("Denominator multiplier (e.g., 0.879)", value=0.879)
-        man_const_c = st.number_input("Denominator addition (e.g., 2.222)", value=2.222)
+        man_const_a = st.number_input("Subtracted Constant (a)", value=0.307)
+        man_const_b = st.number_input("Denominator multiplier (b)", value=0.879)
+        man_const_c = st.number_input("Denominator addition (c)", value=2.222)
         use_manual = st.checkbox("Use Manual Formula")
     else:
         st.success(f"Using formula generated from Tab 3. (Peaks: {st.session_state['formula']['v_amp']}, {st.session_state['formula']['v_cry']})")
@@ -227,11 +230,10 @@ with tab4:
             if use_manual:
                 xc = (r - man_const_a) / (man_const_b * r + man_const_c)
             else:
-                # Custom calculation based on literature derivation standard
-                # Adjust this math to fit your specific derived slope/equation
-                ka_ratio = st.session_state['formula']['k_amp_r']
-                kc_ratio = st.session_state['formula']['k_cry_r']
-                xc = (r - ka_ratio) / (kc_ratio * r + 1) # Generalized placeholder
+                a = st.session_state['formula']['a']
+                b = st.session_state['formula']['b']
+                c = st.session_state['formula']['c']
+                xc = (r - a) / (b * r + c)
                 
             results.append({
                 "Filename": file.name,
